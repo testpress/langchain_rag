@@ -57,10 +57,6 @@ document_ids = vector_store.add_documents(documents=all_splits)
 
 print(document_ids[:3])
 print(len(document_ids))
-# Define prompt for question-answering
-# N.B. for non-US LangSmith endpoints, you may need to specify
-# api_url="https://api.smith.langchain.com" in hub.pull.
-prompt = hub.pull("rlm/rag-prompt")
 
 
 
