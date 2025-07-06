@@ -10,6 +10,12 @@ dependencies = [
     "langchain-core>=0.3.68",
     "langchain-openai>=0.3.27",
     "langchain-text-splitters>=0.3.8",
+    "langchain-unstructured[local]>=0.1.5",
     "langchain[openai]>=0.3.26",
     "langgraph>=0.5.1",
+    "pypdf>=5.7.0",
+    "unstructured[all-docs]>=0.18.3",
+    "PyMuPDF>=1.23.0",
+    "matplotlib>=3.8.0",
+    "Pillow>=10.0.0",
 ]
