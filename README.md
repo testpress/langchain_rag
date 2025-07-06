@@ -147,6 +147,16 @@ This project is open source and available under the MIT License.
 
 ## Acknowledgments
 
-- Based on LangChain and LangGraph frameworks
-- Uses content from Lilian Weng's blog post about AI agents
+This project is based on and adapted from the official LangChain tutorials:
+
+- [Build a Retrieval Augmented Generation (RAG) App: Part 1](https://python.langchain.com/docs/tutorials/rag/) - Core RAG implementation patterns
+- [Build a Retrieval Augmented Generation (RAG) App: Part 2](https://python.langchain.com/docs/tutorials/qa_chat_history/) - Chat history and conversation features
+
+The project demonstrates two different approaches to RAG:
+- **Custom Graph Approach**: Inspired by the structured query analysis and retrieval patterns from the official tutorials
+- **ReAct Agent Approach**: Based on the agent-based RAG patterns with tool integration
+
+Additional credits:
+- Uses content from [Lilian Weng's blog post about AI agents](https://lilianweng.github.io/posts/2023-06-23-agent/)
+- Built with LangChain and LangGraph frameworks
 - Inspired by modern RAG patterns and best practices
