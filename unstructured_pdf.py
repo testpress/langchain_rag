@@ -3,11 +3,13 @@ from langchain_unstructured import UnstructuredLoader
 import getpass
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
-from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_weaviate.vectorstores import WeaviateVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
+from weaviate_client import WeaviateDB
+from metadata_processor import prepare_metadata_for_weaviate
 
 # Load and process PDF
 loader = UnstructuredLoader(
@@ -26,15 +28,22 @@ text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20
 all_splits = text_splitter.split_documents(docs)
 print(f"Split into {len(all_splits)} chunks")
 
+from langchain_core.documents import Document
+cleaned_splits = [
+    Document(page_content=doc.page_content, metadata=prepare_metadata_for_weaviate(doc.metadata))
+    for doc in all_splits
+]
+
 # Set up OpenAI API key
 if not os.environ.get("OPENAI_API_KEY"):
   os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
 
 # Create vector store
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large", chunk_size=120)
-vector_store = InMemoryVectorStore(embeddings)
-document_ids = vector_store.add_documents(all_splits)
-print(f"Added {len(document_ids)} documents to vector store")
+client_manager = WeaviateDB()
+weaviate_client = client_manager.get_client()
+vector_store = WeaviateVectorStore.from_documents(cleaned_splits, embeddings, client=weaviate_client)
+print(f"Added {len(cleaned_splits)} documents to vector store")
 
 llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
@@ -64,30 +73,33 @@ def chat_with_pdf():
     print("Ask questions about the PDF. Type 'quit' to exit.")
     print()
     
-    while True:
-        user_input = input("You: ").strip()
-        
-        if user_input.lower() in ['quit', 'exit', 'q']:
-            print("Goodbye!")
-            break
+    try:
+        while True:
+            user_input = input("You: ").strip()
             
-        if not user_input:
-            continue
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print("Goodbye!")
+                break
+                
+            if not user_input:
+                continue
+                
+            print("\nAgent: ", end="", flush=True)
             
-        print("\nAgent: ", end="", flush=True)
-        
-        # Stream the agent's response
-        for event in agent_executor.stream(
-            {"messages": [{"role": "user", "content": user_input}]},
-            stream_mode="values",
-            config=config,
-        ):
-            if "messages" in event and event["messages"]:
-                latest_message = event["messages"][-1]
-                if hasattr(latest_message, 'content'):
-                    print(latest_message.content, end="", flush=True)
-        
-        print("\n")
+            # Stream the agent's response
+            for event in agent_executor.stream(
+                {"messages": [{"role": "user", "content": user_input}]},
+                stream_mode="values",
+                config=config,
+            ):
+                if "messages" in event and event["messages"]:
+                    latest_message = event["messages"][-1]
+                    if hasattr(latest_message, 'content'):
+                        print(latest_message.content, end="", flush=True)
+            
+            print("\n")
+    finally:
+            weaviate_client.close()
 
 # Test the agent with some initial queries
 def test_agent():
@@ -129,3 +141,4 @@ if __name__ == "__main__":
     print("Starting interactive chat...")
     print("="*50)
     chat_with_pdf()
+    
