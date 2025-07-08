@@ -1,7 +1,5 @@
 import weaviate, os, getpass
 from weaviate.classes.init import Auth
-from weaviate.config import AdditionalConfig, Timeout
-
 
 class WeaviateDB:
     def __init__(self):
@@ -11,6 +9,8 @@ class WeaviateDB:
     def _configure_environment(self):
         self.http_host = os.environ.get("WEAVIATE_HTTP_HOST", "localhost")
         self.grpc_host = os.environ.get("WEAVIATE_GRPC_HOST", "localhost")
+        self.http_port = int(os.environ.get("WEAVIATE_HTTP_PORT", "8080"))
+        self.grpc_port = int(os.environ.get("WEAVIATE_GRPC_PORT", "50051"))
         self.weaviate_use_ssl = os.environ.get("WEAVIATE_USE_SSL", "false")
         
         if not os.environ.get("WEAVIATE_API_KEY"):
@@ -21,12 +21,12 @@ class WeaviateDB:
         if self._client is None:
             self._client = weaviate.connect_to_custom(
                 http_host=self.http_host,        
-                http_port=8080,              
+                http_port=self.http_port,              
                 http_secure=self.weaviate_use_ssl,           
                 grpc_host=self.grpc_host,        
-                grpc_port=50051,              
+                grpc_port=self.grpc_port,              
                 grpc_secure=self.weaviate_use_ssl,           
-                auth_credentials=self.weaviate_api_key,    
+                auth_credentials=Auth.api_key(self.weaviate_api_key),    
             )
         return self._client
 

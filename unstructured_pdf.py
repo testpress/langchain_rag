@@ -2,9 +2,11 @@ import os
 from langchain_unstructured import UnstructuredLoader
 import getpass
 from langchain.chat_models import init_chat_model
+
 from langchain_openai import OpenAIEmbeddings
 from langchain_weaviate.vectorstores import WeaviateVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -28,7 +30,6 @@ text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20
 all_splits = text_splitter.split_documents(docs)
 print(f"Split into {len(all_splits)} chunks")
 
-from langchain_core.documents import Document
 cleaned_splits = [
     Document(page_content=doc.page_content, metadata=prepare_metadata_for_weaviate(doc.metadata))
     for doc in all_splits
@@ -115,21 +116,23 @@ def test_agent():
     print("\n" + "="*50)
     print("AGENT TESTING")
     print("="*50)
-    
-    for query in test_queries:
-        print(f"\nQuestion: {query}")
-        print("-" * 40)
-        
-        for event in agent_executor.stream(
-            {"messages": [{"role": "user", "content": query}]},
-            stream_mode="values",
-            config=config,
-        ):
-            if "messages" in event and event["messages"]:
-                latest_message = event["messages"][-1]
-                if hasattr(latest_message, 'content'):
-                    print(latest_message.content)
-        print()
+    try:
+        for query in test_queries:
+            print(f"\nQuestion: {query}")
+            print("-" * 40)
+            
+            for event in agent_executor.stream(
+                {"messages": [{"role": "user", "content": query}]},
+                stream_mode="values",
+                config=config,
+            ):
+                if "messages" in event and event["messages"]:
+                    latest_message = event["messages"][-1]
+                    if hasattr(latest_message, 'content'):
+                            print(latest_message.content)
+                print()
+    finally:
+        weaviate_client.close()
 
 # Run the test first, then start interactive chat
 if __name__ == "__main__":

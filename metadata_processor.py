@@ -20,7 +20,6 @@ def prepare_metadata_for_weaviate(metadata: dict) -> dict:
         coords = weaviate_compatible_metadata['coordinates']
 
         if not isinstance(coords, dict):
-            print(f"Warning: 'coordinates' is not a dictionary. Skipping processing for: {coords}")
             weaviate_compatible_metadata.pop('coordinates', None)
         else:
             original_points = coords.get('points')
