@@ -32,17 +32,34 @@ def create_chat_agent(vector_store):
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
     
     @tool
-    def retrieve_from_pdf(query: str):
-        """Retrieve information from the PDF document based on a query."""
-        retrieved_docs = vector_store.similarity_search(query, k=10)
+    def retrieve_from_pdf(query: str, k: int = 3):
+        """
+        Retrieve information from the PDF document based on a query.
+        
+        CRITICAL: You MUST choose the 'k' parameter based on the query type:
+        - For summary/overview questions: use k=15-25 (more documents needed)
+        - For broad overview questions: use k=8-12
+        - For specific details: use k=3-5  
+        - For comprehensive analysis: use k=20-30
+        - For document summary: use k=20-30
+        - Maximum allowed is k=30
+        
+        Args:
+            query (str): The search query.
+            k (int): Number of relevant documents to retrieve (1-30). ALWAYS choose based on query scope.
+        """
+        # Ensure k is within a sensible range
+        k = max(1, min(k, 20))
+        print(f"Retrieving {k} documents for query: {query}")
+        retrieved_docs = vector_store.similarity_search(query, k=k)
         serialized = "\n\n".join(
             (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}")
             for doc in retrieved_docs
         )
         return serialized
-
-    memory = MemorySaver()
-    agent_executor = create_react_agent(llm, [retrieve_from_pdf], checkpointer=memory)  
+    
+    # Create the agent with the tool
+    agent_executor = create_react_agent(llm, [retrieve_from_pdf])
     return agent_executor
 
 def chat_with_pdf(collection_name):
