@@ -18,38 +18,33 @@ def prepare_metadata_for_weaviate(metadata: dict) -> dict:
     # --- Handle 'coordinates' field ---
     if 'coordinates' in weaviate_compatible_metadata and weaviate_compatible_metadata['coordinates'] is not None:
         coords = weaviate_compatible_metadata['coordinates']
-        
+
         if not isinstance(coords, dict):
             print(f"Warning: 'coordinates' is not a dictionary. Skipping processing for: {coords}")
             weaviate_compatible_metadata.pop('coordinates', None)
         else:
             original_points = coords.get('points')
-            
-            bbox_data = {}
+
+            bbox_points_list = [] # This will store our list of point objects
 
             if original_points and len(original_points) == 4:
                 try:
-                    bbox_data['x0'] = float(original_points[0][0]) # Point 0, X
-                    bbox_data['y0'] = float(original_points[0][1]) # Point 0, Y
-                    
-                    bbox_data['x1'] = float(original_points[1][0]) # Point 1, X
-                    bbox_data['y1'] = float(original_points[1][1]) # Point 1, Y
-                    
-                    bbox_data['x2'] = float(original_points[2][0]) # Point 2, X
-                    bbox_data['y2'] = float(original_points[2][1]) # Point 2, Y
-                    
-                    bbox_data['x3'] = float(original_points[3][0]) # Point 3, X
-                    bbox_data['y3'] = float(original_points[3][1]) # Point 3, Y
+                    # Iterate through each (x, y) tuple and assign to named properties
+                    for i, (x_coord, y_coord) in enumerate(original_points):
+                        point_obj = {}
+                        point_obj[f'x{i}'] = float(x_coord) # Use f-string for x0, x1, etc.
+                        point_obj[f'y{i}'] = float(y_coord) # Use f-string for y0, y1, etc.
+                        bbox_points_list.append(point_obj)
 
                 except (IndexError, TypeError, ValueError) as e:
-                    print(f"Error processing 'points' for detailed bbox: {e}. Original points: {original_points}")
-                    bbox_data = {} # Reset to empty on error
+                    print(f"Error processing 'points' for bbox_points list: {e}. Original points: {original_points}")
+                    bbox_points_list = [] # Reset to empty on error
             else:
-                print(f"Warning: 'points' missing or not 4 elements for detailed bbox. Points: {original_points}")
+                print(f"Warning: 'points' missing or not 4 elements for bbox_points list. Points: {original_points}")
 
-            if bbox_data:
-                weaviate_compatible_metadata['bbox'] = bbox_data
-            
+            if bbox_points_list:
+                weaviate_compatible_metadata['bbox_points'] = bbox_points_list
+
             # Remove the original 'coordinates' key
             weaviate_compatible_metadata.pop('coordinates', None)
     # --- Handle other common metadata fields, ensuring compatible types ---
