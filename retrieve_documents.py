@@ -4,9 +4,11 @@ from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 from langchain_weaviate.vectorstores import WeaviateVectorStore
 from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from weaviate_client import WeaviateDB
+from prompts import system_message_content
 
 def connect_to_collection(collection_name):
     if not os.environ.get("OPENAI_API_KEY"):
@@ -30,13 +32,19 @@ def connect_to_collection(collection_name):
 
 def create_chat_agent(vector_store):
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_message_content),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
     
     @tool
-    def retrieve_from_pdf(query: str, k: int = 3):
+    def retrieve_from_pdf(query: str, k: 3):
         """
         Retrieve information from the PDF document based on a query.
         
-        CRITICAL: You MUST choose the 'k' parameter based on the query type:
+        Note: It is important to choose the 'k' parameter based on the query type:
         - For summary/overview questions: use k=15-25 (more documents needed)
         - For broad overview questions: use k=8-12
         - For specific details: use k=3-5  
@@ -48,18 +56,21 @@ def create_chat_agent(vector_store):
             query (str): The search query.
             k (int): Number of relevant documents to retrieve (1-30). ALWAYS choose based on query scope.
         """
-        # Ensure k is within a sensible range
-        k = max(1, min(k, 20))
-        print(f"Retrieving {k} documents for query: {query}")
         retrieved_docs = vector_store.similarity_search(query, k=k)
         serialized = "\n\n".join(
             (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}")
             for doc in retrieved_docs
         )
         return serialized
+
+    memory = MemorySaver()
     
-    # Create the agent with the tool
-    agent_executor = create_react_agent(llm, [retrieve_from_pdf])
+    agent_executor = create_react_agent(
+        llm, 
+        [retrieve_from_pdf], 
+        prompt=prompt,
+        checkpointer=memory,
+    )  
     return agent_executor
 
 def chat_with_pdf(collection_name):
