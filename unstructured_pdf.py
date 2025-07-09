@@ -7,7 +7,8 @@ from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.tools import tool
+from langchain_core.tools import tool, Tool
+from langchain.retrievers.multi_query import MultiQueryRetriever
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_community.vectorstores.utils import filter_complex_metadata
@@ -15,7 +16,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, Syst
 
 system_message_content = (
     """You are an AI assistant answering questions based on a PDF document, accessible via the 'retrieve_from_pdf' tool.
-    For general conversation (e.g., greetings), reply naturally using general knowledge.
+    Decide whether to answer directly, or call a tool
+    For general conversation (e.g., greetings), reply directly but don't give any information outside from the document.
     If the input is about the document or refers to it (e.g., 'what is this about?', 'summarize this', 'what does it say about X?'), use 'retrieve_from_pdf' to respond.
     For broad queries (e.g., 'summarize this document'), call 'retrieve_from_pdf' with a general query like 'main topics and summary'."""
 )
@@ -113,7 +115,6 @@ def create_chat_agent(pdf_path):
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
-
     """Create a chat agent for a specific PDF"""
     config = load_config()
     if pdf_path not in config:
@@ -129,6 +130,11 @@ def create_chat_agent(pdf_path):
         collection_name=collection_name
     )
     
+   # MultiQueryRetriever setup
+    multi_query_retriever = MultiQueryRetriever.from_llm(
+        retriever=vector_store.as_retriever(search_kwargs={"k": 15}),
+        llm=llm,
+    )
     # Create a tool for PDF retrieval
     @tool
     def retrieve_from_pdf(query: str, k: int = 10):
@@ -155,9 +161,22 @@ def create_chat_agent(pdf_path):
         )
         return serialized
     
+
+    retrieve_with_multiquery = Tool(
+        name="retrieve_from_pdf",
+        func=lambda query: "\n\n".join(
+            f"Source: {doc.metadata}\nContent: {doc.page_content}"
+            for doc in multi_query_retriever.get_relevant_documents(query)
+        ),
+        description=(
+            "Retrieves relevant information from the PDF document based on semantic multi-query search. "
+            "Use this for any question that might need evidence or references from the PDF."
+            "Decide on how much k to use based on the query."
+        ),
+    )
     # Create ReAct agent
     memory = MemorySaver()
-    agent_executor = create_react_agent(llm, [retrieve_from_pdf], 
+    agent_executor = create_react_agent(llm, [retrieve_with_multiquery], 
         prompt=prompt, checkpointer=memory)
     
     return agent_executor
