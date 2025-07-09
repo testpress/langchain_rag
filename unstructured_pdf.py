@@ -8,9 +8,10 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
 from langchain_community.vectorstores.utils import filter_complex_metadata
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 # Set up OpenAI API key
 if not os.environ.get("OPENAI_API_KEY"):
@@ -99,7 +100,7 @@ def index_pdf(pdf_path):
     return True
 
 def create_chat_agent(pdf_path):
-    """Create a chat agent for a specific PDF"""
+    """Create a retrieval chain for a specific PDF"""
     config = load_config()
     if pdf_path not in config:
         print(f"Error: {pdf_path} is not indexed!")
@@ -114,30 +115,36 @@ def create_chat_agent(pdf_path):
         collection_name=collection_name
     )
     
-    # Create a tool for PDF retrieval
-    @tool
-    def retrieve_from_pdf(query: str):
-        """Retrieve information from the PDF document based on a query."""
-        retrieved_docs = vector_store.similarity_search(query, k=10)
-        serialized = "\n\n".join(
-            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}")
-            for doc in retrieved_docs
-        )
-        return serialized
+    # Create a retriever
+    retriever = vector_store.as_retriever(search_kwargs={"k": 10})
     
-    # Create ReAct agent
-    memory = MemorySaver()
-    agent_executor = create_react_agent(llm, [retrieve_from_pdf], checkpointer=memory)
+    # Create a prompt template
+    template = """You are a helpful assistant that answers questions based on the provided context from a PDF document.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer the question based on the context above. If the context doesn't contain enough information to answer the question, say so. Keep your answers concise and accurate."""
+
+    prompt = ChatPromptTemplate.from_template(template)
     
-    return agent_executor
+    # Create the retrieval chain
+    retrieval_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+    
+    return retrieval_chain
 
 def chat_with_pdf(pdf_path):
     """Interactive chat interface for querying a specific PDF"""
-    agent_executor = create_chat_agent(pdf_path)
-    if not agent_executor:
+    retrieval_chain = create_chat_agent(pdf_path)
+    if not retrieval_chain:
         return
-    
-    config = {"configurable": {"thread_id": f"pdf_chat_{Path(pdf_path).stem}"}}
     
     print(f"\n" + "="*50)
     print(f"CHAT INTERFACE - {Path(pdf_path).name}")
@@ -155,21 +162,12 @@ def chat_with_pdf(pdf_path):
         if not user_input:
             continue
             
-        # Collect all events, print only the final response
-        final_message = None
-        for event in agent_executor.stream(
-            {"messages": [{"role": "user", "content": user_input}]},
-            stream_mode="values",
-            config=config,
-        ):
-            if "messages" in event and event["messages"]:
-                latest_message = event["messages"][-1]
-                if hasattr(latest_message, 'content'):
-                    final_message = latest_message.content
-        if final_message:
-            print(f"\nAgent: {final_message}\n")
-        else:
-            print("\nAgent: (No response)\n")
+        try:
+            # Get response from the retrieval chain
+            response = retrieval_chain.invoke(user_input)
+            print(f"\nAssistant: {response}\n")
+        except Exception as e:
+            print(f"\nError: {str(e)}\n")
 
 def show_indexed_pdfs():
     """Display all indexed PDFs"""
