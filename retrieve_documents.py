@@ -3,7 +3,8 @@ import getpass
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 from langchain_weaviate.vectorstores import WeaviateVectorStore
-from langchain_core.tools import tool
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_core.tools import tool, Tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -32,29 +33,21 @@ def connect_to_collection(collection_name):
 
 def create_chat_agent(vector_store):
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_message_content),
-            MessagesPlaceholder(variable_name="messages"),
-        ]
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful AI assistant. Decide whether to answer directly, or call a tool."),
+        MessagesPlaceholder(variable_name="messages"),
+    ])
+
+    # MultiQueryRetriever setup
+    multi_query_retriever = MultiQueryRetriever.from_llm(
+        retriever=vector_store.as_retriever(search_kwargs={"k": 15}),
+        llm=llm,
     )
     
     @tool
     def retrieve_from_pdf(query: str, k: 3):
         """
         Retrieve information from the PDF document based on a query.
-        
-        Note: It is important to choose the 'k' parameter based on the query type:
-        - For summary/overview questions: use k=15-25 (more documents needed)
-        - For broad overview questions: use k=8-12
-        - For specific details: use k=3-5  
-        - For comprehensive analysis: use k=20-30
-        - For document summary: use k=20-30
-        - Maximum allowed is k=30
-        
-        Args:
-            query (str): The search query.
-            k (int): Number of relevant documents to retrieve (1-30). ALWAYS choose based on query scope.
         """
         retrieved_docs = vector_store.similarity_search(query, k=k)
         serialized = "\n\n".join(
@@ -63,11 +56,24 @@ def create_chat_agent(vector_store):
         )
         return serialized
 
+    retrieve_with_multiquery = Tool(
+        name="retrieve_from_pdf",
+        func=lambda query: "\n\n".join(
+            f"Source: {doc.metadata}\nContent: {doc.page_content}"
+            for doc in multi_query_retriever.get_relevant_documents(query)
+        ),
+        description=(
+            "Retrieves relevant information from the PDF document based on semantic multi-query search. "
+            "Use this for any question that might need evidence or references from the PDF."
+            "Decide on how much k to use based on the query."
+        ),
+    )
+    
     memory = MemorySaver()
     
     agent_executor = create_react_agent(
         llm, 
-        [retrieve_from_pdf], 
+        [retrieve_with_multiquery], 
         prompt=prompt,
         checkpointer=memory,
     )  
