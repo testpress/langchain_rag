@@ -11,6 +11,14 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_community.vectorstores.utils import filter_complex_metadata
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+
+system_message_content = (
+    """You are an AI assistant answering questions based on a PDF document, accessible via the 'retrieve_from_pdf' tool.
+    For general conversation (e.g., greetings), reply naturally using general knowledge.
+    If the input is about the document or refers to it (e.g., 'what is this about?', 'summarize this', 'what does it say about X?'), use 'retrieve_from_pdf' to respond.
+    For broad queries (e.g., 'summarize this document'), call 'retrieve_from_pdf' with a general query like 'main topics and summary'."""
+)
 
 # Set up OpenAI API key
 if not os.environ.get("OPENAI_API_KEY"):
@@ -99,6 +107,13 @@ def index_pdf(pdf_path):
     return True
 
 def create_chat_agent(pdf_path):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_message_content),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+
     """Create a chat agent for a specific PDF"""
     config = load_config()
     if pdf_path not in config:
@@ -116,9 +131,24 @@ def create_chat_agent(pdf_path):
     
     # Create a tool for PDF retrieval
     @tool
-    def retrieve_from_pdf(query: str):
-        """Retrieve information from the PDF document based on a query."""
-        retrieved_docs = vector_store.similarity_search(query, k=10)
+    def retrieve_from_pdf(query: str, k: int = 10):
+        """
+        Retrieve information from the PDF document based on a query.
+        
+        Note: It is important to choose the 'k' parameter based on the query type:
+        - For summary/overview questions: use k=15-25 (more documents needed)
+        - For broad overview questions: use k=8-12
+        - For specific details: use k=3-5  
+        - For comprehensive analysis: use k=20-30
+        - For document summary: use k=20-30
+        - Maximum allowed is k=30
+        
+        Args:
+            query (str): The search query.
+            k (int): Number of relevant documents to retrieve (1-30). ALWAYS choose based on query scope.
+        """
+        print(f"Retrieving {k} documents for query: {query}")
+        retrieved_docs = vector_store.similarity_search(query, k=k)
         serialized = "\n\n".join(
             (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}")
             for doc in retrieved_docs
@@ -127,7 +157,8 @@ def create_chat_agent(pdf_path):
     
     # Create ReAct agent
     memory = MemorySaver()
-    agent_executor = create_react_agent(llm, [retrieve_from_pdf], checkpointer=memory)
+    agent_executor = create_react_agent(llm, [retrieve_from_pdf], 
+        prompt=prompt, checkpointer=memory)
     
     return agent_executor
 
